@@ -1,5 +1,6 @@
 package com.example.todoapp.addtasks.ui
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -27,16 +28,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.example.todoapp.addtasks.ui.model.TaskModel
 
 
@@ -44,22 +50,48 @@ import com.example.todoapp.addtasks.ui.model.TaskModel
 fun TasksScreen(tasksViewModel: TasksViewModel) {  // pasar el taskViewModel: TasksViewModel
 
     val showDialog:Boolean by tasksViewModel.showDialog.observeAsState(initial = false) //crea instancia a liveData
+    val lifecycle = LocalLifecycleOwner.current.lifecycle //crear un ciclo de vida del Screen
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    val uiState by produceState<TasksUIState>(
+        initialValue = TasksUIState.Loading,
+        key1 = lifecycle,
+        key2 = tasksViewModel
+    ) {
 
-       AddTaskDialog(showDialog, onDismiss = {tasksViewModel.onDialogClose()}, onTaskAdded = {tasksViewModel.onTaskAdded(it)})
-       FabDialog(Modifier.align(Alignment.BottomEnd), tasksViewModel)
-        TasksList(tasksViewModel)
-
+        lifecycle.repeatOnLifecycle(state = Lifecycle.State.STARTED) {
+            tasksViewModel.uiState.collect { value = it }
+        }
     }
+
+    when (uiState) {
+        is TasksUIState.Error -> {
+
+        }
+        TasksUIState.Loading -> {
+            val contextForToast = LocalContext.current.applicationContext
+            Box(modifier = Modifier
+                .fillMaxSize(),
+                contentAlignment = Alignment.Center) {
+                //CircularProgressIndicator(Modifier.align(Alignment.Center))
+                Toast.makeText(contextForToast, "Loading", Toast.LENGTH_SHORT).show()
+            }
+        }
+        is TasksUIState.Success -> {
+            Box(modifier = Modifier.fillMaxSize()) {
+                AddTaskDialog(showDialog, onDismiss = {tasksViewModel.onDialogClose()}, onTaskAdded = {tasksViewModel.onTaskAdded(it)})
+                FabDialog(Modifier.align(Alignment.BottomEnd), tasksViewModel)
+                TasksList((uiState as TasksUIState.Success).tasks, tasksViewModel)
+            }
+        }
+    }
+
 }
 
 @Composable
-fun TasksList(tasksViewModel: TasksViewModel) {
-    val myTasks: List<TaskModel> = tasksViewModel.tasksList
-    LazyColumn {
-        items(myTasks, key = { it.id }) { task ->
+fun TasksList(tasks: List<TaskModel>, tasksViewModel: TasksViewModel) {
 
+    LazyColumn {
+        items(tasks, key = { it.id }) { task ->
             ItemTask(task, tasksViewModel)
 
             }
@@ -73,9 +105,9 @@ fun ItemTask(taskModel : TaskModel, tasksViewModel: TasksViewModel) {
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .pointerInput(Unit) {
-                                detectTapGestures(onLongPress = {
-                                    tasksViewModel.onItemRemove(taskModel)
-                                })
+                detectTapGestures(onLongPress = {
+                    tasksViewModel.onItemRemove(taskModel)
+                })
             }
 
         ,
@@ -83,7 +115,9 @@ fun ItemTask(taskModel : TaskModel, tasksViewModel: TasksViewModel) {
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(text = taskModel.task, modifier = Modifier.weight(1f).padding(horizontal = 4.dp))
+            Text(text = taskModel.task, modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 4.dp))
             Checkbox(checked = taskModel.selected, onCheckedChange = {tasksViewModel.onCheckBoxSelected(taskModel)})
         }
     }
